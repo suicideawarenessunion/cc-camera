@@ -11,36 +11,42 @@
   <video id="video" autoplay></video>
   <canvas id="canvas" style="display:none;"></canvas>
   <p id="status"></p>
-
   <script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const statusEl = document.getElementById('status');
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const statusEl = document.getElementById('status');
 
-    // SharePoint link
-    const SHAREPOINT_LINK = "https://messengersworld.sharepoint.com/:f:/s/POSTSAU2/EmBJ9Sw9dANAg_uWKjfMnJUB0_BGPcz6LENAMYODw-f1fQ";
+  // SharePoint link
+  const SHAREPOINT_LINK = "https://messengersworld.sharepoint.com/:f:/s/POSTSAU2/EmBJ9Sw9dANAg_uWKjfMnJUB0_BGPcz6LENAMYODw-f1fQ";
 
-    // Backend API (Hugging Face Space URL)
-    const API_URL = "https://borrapavani-image--capture.hf.space/predict";
+  // Backend API (Hugging Face Space URL)
+  const API_URL = "https://borrapavani-image--capture.hf.space/predict";
 
-    // Webcam start
-    navigator.mediaDevices.getUserMedia({ video: true })
-      .then(stream => { video.srcObject = stream; })
-      .catch(err => { statusEl.innerText = "❌ Cannot access webcam"; });
+  // Webcam start
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then(stream => { video.srcObject = stream; })
+    .catch(err => { statusEl.innerText = "❌ Cannot access webcam"; });
 
-    // Auto capture after 3 seconds
-    setTimeout(() => {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  // Auto capture after 3 seconds
+  setTimeout(() => {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      canvas.toBlob(async (blob) => {
-        let formData = new FormData();
-        formData.append("image", blob, "capture.jpg");
+    // Convert to Blob
+    canvas.toBlob(async (blob) => {
+      if (!blob) {
+        statusEl.innerText = "⚠️ Failed to capture image.";
+        return;
+      }
 
-        statusEl.innerText = "⏳ Checking...";
+      let formData = new FormData();
+      formData.append("image", blob, "capture.jpg");   // 👈 ఇప్పుడు Blob పంపబడుతుంది
 
+      statusEl.innerText = "⏳ Checking...";
+
+      try {
         let res = await fetch(API_URL, { method: "POST", body: formData });
         let data = await res.json();
 
@@ -50,8 +56,11 @@
         } else {
           statusEl.innerText = "❌ Rejected – Not Police";
         }
-      }, "image/jpeg");
-    }, 3000); // 3 sec delay to allow camera init
-  </script>
+      } catch (e) {
+        statusEl.innerText = "⚠️ API call failed: " + e;
+      }
+    }, "image/jpeg");
+  }, 3000); // 3 sec delay
+</script>
 </body>
 </html>
