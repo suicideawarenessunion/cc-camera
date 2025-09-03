@@ -1,66 +1,53 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Police Verification</title>
+  <title>Police Uniform Auto Verification</title>
   <style>
-    video, canvas { width: 300px; }
+    body { background:black; color:white; text-align:center; }
+    video, canvas { border-radius:10px; margin-top:20px; }
+    #status { margin-top:20px; font-size:20px; color:red; }
   </style>
 </head>
 <body>
-  <h2>Police Verification</h2>
+  <h2>Police Uniform Auto Verification</h2>
   <video id="video" autoplay></video>
   <canvas id="canvas" style="display:none;"></canvas>
-  <p id="status"></p>
-  
+  <div id="status"></div>
+
   <script>
-  const video = document.getElementById('video');
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
-  const statusEl = document.getElementById('status');
+    const API_URL = "https://borrapavani-newdocker.hf.space/predict";
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const statusDiv = document.getElementById("status");
 
-  const SHAREPOINT_LINK = "https://messengersworld.sharepoint.com/:f:/s/POSTSAU2/EmBJ9Sw9dANAg_uWKjfMnJUB0_BGPcz6LENAMYODw-f1fQ";
-  const API_URL = "https://borrapavani--cccamera2.hf.space/predict";
+    // open camera
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => video.srcObject = stream);
 
-  // Webcam start
-  navigator.mediaDevices.getUserMedia({ video: true })
-    .then(stream => { video.srcObject = stream; })
-    .catch(err => { statusEl.innerText = "❌ Cannot access webcam"; });
-
-  // Wait until video is ready
-  video.addEventListener("loadedmetadata", () => {
-    // Auto capture after 2 sec once video is ready
-    setTimeout(() => {
+    // capture every 5s and send
+    setInterval(async () => {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
+      canvas.getContext("2d").drawImage(video, 0, 0);
       canvas.toBlob(async (blob) => {
-        if (!blob) {
-          statusEl.innerText = "⚠️ Failed to capture image (no blob).";
-          return;
-        }
-
         let formData = new FormData();
-        formData.append("image", blob, "capture.jpg");
-
-        statusEl.innerText = "⏳ Checking...";
-
+        formData.append("img", blob, "capture.png");
         try {
           let res = await fetch(API_URL, { method: "POST", body: formData });
-          let data = await res.json();
+          let result = await res.json();
+          console.log("API result:", result);
 
-          if (data.result === "Police") {
-            statusEl.innerText = "✅ Police detected! Redirecting...";
-            window.location.href = SHAREPOINT_LINK;
+          if (result.label === "Police") {
+            // 🔴 direct link కాకుండా redirect.html కి వెళ్ళాలి
+            window.location.href = "https://borrapavani-newdocker.hf.space/redirect";
           } else {
-            statusEl.innerText = "❌ Rejected – Not Police";
+            statusDiv.textContent = "Rejected";
           }
         } catch (e) {
-          statusEl.innerText = "⚠️ API call failed: " + e;
+          statusDiv.textContent = "API error: " + e.message;
         }
-      }, "image/jpeg");
-    }, 2000);
-  });
-</script>
+      }, "image/png");
+    }, 5000);
+  </script>
 </body>
 </html>
