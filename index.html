@@ -20,6 +20,10 @@
     const canvas = document.getElementById("canvas");
     const statusDiv = document.getElementById("status");
 
+    // safeguard variables
+    let policeCount = 0;  // consecutive Police detections
+    const REQUIRED_FRAMES = 3;  // 3 frames continuous
+
     // open camera
     navigator.mediaDevices.getUserMedia({ video: true })
       .then(stream => video.srcObject = stream);
@@ -32,15 +36,28 @@
       canvas.toBlob(async (blob) => {
         let formData = new FormData();
         formData.append("img", blob, "capture.png");
+
         try {
           let res = await fetch(API_URL, { method: "POST", body: formData });
           let result = await res.json();
           console.log("API result:", result);
 
-          if (result.label === "Police") {
-            // 🔴 direct link కాకుండా redirect.html కి వెళ్ళాలి
-            window.location.href = "https://borrapavani-newdocker.hf.space/redirect";
+          // check Police + confidence threshold
+          if (result.label === "Police" && result.confidence >= 0.8) {
+            policeCount++;
+            statusDiv.textContent = `✅ Police detected (${policeCount}/${REQUIRED_FRAMES})`;
+
+            if (policeCount >= REQUIRED_FRAMES) {
+              // open SharePoint link only after 3 continuous Police frames
+              window.open(
+                "https://messengersworld.sharepoint.com/...", 
+                "_blank"
+              );
+              policeCount = 0; // reset after opening
+            }
           } else {
+            // reset counter if any frame fails
+            policeCount = 0;
             statusDiv.textContent = "Rejected";
           }
         } catch (e) {
