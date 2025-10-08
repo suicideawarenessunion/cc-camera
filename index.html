@@ -20,15 +20,12 @@
     const canvas = document.getElementById("canvas");
     const statusDiv = document.getElementById("status");
 
-    // safeguard variables
-    let policeCount = 0;  // consecutive Police detections
-    const REQUIRED_FRAMES = 3;  // 3 frames continuous
+    let policeCount = 0;
+    const REQUIRED_FRAMES = 3;
 
-    // open camera
     navigator.mediaDevices.getUserMedia({ video: true })
       .then(stream => video.srcObject = stream);
 
-    // capture every 5s and send
     setInterval(async () => {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
@@ -42,18 +39,16 @@
           let result = await res.json();
           console.log("API result:", result);
 
-          // check Police + confidence threshold
-          if (result.label === "Police" && result.confidence >= 0.8) {
+          // 🔽 Threshold lowered to 0.5
+          if (result.label === "Police" && result.confidence >= 0.5) {
             policeCount++;
             statusDiv.textContent = `✅ Police detected (${policeCount}/${REQUIRED_FRAMES})`;
 
             if (policeCount >= REQUIRED_FRAMES) {
-              // open SharePoint link only after 3 continuous Police frames
               window.location.href = "https://sharepoint-proxy-o82z.vercel.app/api/ccfootage";
-              policeCount = 0; // reset after opening
+              policeCount = 0;
             }
           } else {
-            // reset counter if any frame fails
             policeCount = 0;
             statusDiv.textContent = "Rejected";
           }
