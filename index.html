@@ -1,116 +1,159 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Scan</title>
   <style>
-    body { background:black; color:white; text-align:center; }
-    video, canvas { border-radius:10px; margin-top:20px; }
-    #status { margin-top:20px; font-size:20px; color:red; }
+    body { background:black; color:white; text-align:center; font-family: Arial, sans-serif; }
+    video, canvas { border-radius:10px; margin-top:20px; max-width:90%; height:auto; }
+    #status { margin-top:20px; font-size:18px; color:lightgreen; }
+    #substatus { margin-top:8px; font-size:14px; color:orange; }
+    #btn-test { margin-top:12px; padding:8px 12px; font-size:14px; border-radius:6px; background:#222; color:#fff; border:1px solid #444; cursor:pointer; }
   </style>
 </head>
 <body>
   <h2>Scan</h2>
-  <video id="video" autoplay></video>
+  <video id="video" autoplay playsinline></video>
   <canvas id="canvas" style="display:none;"></canvas>
-  <div id="status"></div>
-
-  <!-- 🔹 OTP input UI -->
-  <div id="otpBox" style="display:none; margin-top:20px;">
-    <p>✅ Police detected. Enter OTP (call operator to get it):</p>
-    <input id="otpInput" type="text" placeholder="Enter OTP" />
-    <button id="verifyBtn">Verify OTP</button>
-    <div id="otpMsg" style="margin-top:8px;color:yellow"></div>
-  </div>
+  <div id="status">Waiting for camera...</div>
+  <div id="substatus"></div>
+  <button id="btn-test" style="display:none;">Trigger test /trigger_otp</button>
 
   <script>
+    // ====== CONFIG ======
+    // model predict endpoint (HuggingFace -> your newdocker predict)
     const API_URL = "https://borrapavani-newdocker.hf.space/predict";
+    // Flask trigger OTP endpoint (update if your proxy URL different)
+    const TRIGGER_OTP_URL = "https://borrapavani-newdocker.hf.space/trigger_otp";
+
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const statusDiv = document.getElementById("status");
+    const substatusDiv = document.getElementById("substatus");
+    const btnTest = document.getElementById("btn-test");
 
-    let policeCount = 0;
-    const REQUIRED_FRAMES = 3;
+    // safeguard variables
+    let policeCount = 0;               // consecutive Police detections
+    const REQUIRED_FRAMES = 3;         // 3 frames continuous
+    const CAPTURE_INTERVAL_MS = 3000;  // capture frequency (3s)
 
     // open camera
-    navigator.mediaDevices.getUserMedia({ video: true })
-      .then(stream => video.srcObject = stream);
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        statusDiv.textContent = "Camera ready. Waiting for detection...";
+        btnTest.style.display = "inline-block";
+      } catch (err) {
+        statusDiv.textContent = "Camera access denied or not available.";
+        substatusDiv.textContent = err.message || "";
+      }
+    }
+    startCamera();
 
-    // capture every 3s and send
-    setInterval(async () => {
+    // helper: POST image to predict endpoint (FormData)
+    async function callPredict(blob) {
+      const formData = new FormData();
+      formData.append("img", blob, "capture.png");
+      // if your HF space requires additional fields, add them here
+      const res = await fetch(API_URL, { method: "POST", body: formData });
+      return await res.json();
+    }
+
+    // helper: call trigger_otp on server. returns { entry_url, token } or throws
+    async function callTriggerOtp(meta = {}) {
+      const res = await fetch(TRIGGER_OTP_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(meta),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || j.message || "trigger_otp failed");
+      return j;
+    }
+
+    // main capture loop
+    const captureLoop = setInterval(() => {
+      if (!video.videoWidth || !video.videoHeight) return; // wait for video ready
+
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      canvas.getContext("2d").drawImage(video, 0, 0);
-      canvas.toBlob(async (blob) => {
-        let formData = new FormData();
-        formData.append("img", blob, "capture.png");
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+      canvas.toBlob(async (blob) => {
         try {
-          let res = await fetch(API_URL, { method: "POST", body: formData });
-          let result = await res.json();
+          substatusDiv.textContent = "Sending frame to model...";
+          const result = await callPredict(blob);
           console.log("API result:", result);
 
-          if (result.label === "Police" && result.confidence >= 0.8) {
+          // model result expected: { label: "Police"|"Not Police", confidence: 0.xx }
+          if (result && result.label === "Police" && result.confidence >= 0.8) {
             policeCount++;
             statusDiv.textContent = `✅ Detected (${policeCount}/${REQUIRED_FRAMES})`;
+            substatusDiv.textContent = `confidence: ${result.confidence.toFixed(2)}`;
 
-            // when 3 detections reached — request OTP from backend
             if (policeCount >= REQUIRED_FRAMES) {
+              statusDiv.textContent = "🔔 Confirmed — triggering OTP...";
+              substatusDiv.textContent = "Contacting server to generate OTP and send mail.";
               try {
-                let genRes = await fetch("/generate_otp", { method: "POST" });
-                let j = await genRes.json();
-                if (j.challenge_id) {
-                  document.getElementById("otpBox").style.display = "block";
-                  document.getElementById("otpMsg").textContent =
-                    "OTP sent to operator email. Call operator for the code.";
-                  window._challenge_id = j.challenge_id;
+                // call our Flask proxy to create OTP & send mail
+                const meta = { camera: "lobby-cam-1", info: "police_detected", ts: new Date().toISOString() };
+                const triggerRes = await callTriggerOtp(meta);
+
+                if (triggerRes && triggerRes.entry_url) {
+                  // open OTP entry page (in same tab or new window)
+                  // we open in same tab here so user can directly enter OTP (or open in new tab if you prefer)
+                  window.location.href = triggerRes.entry_url;
                 } else {
-                  document.getElementById("status").textContent =
-                    "Failed to request OTP";
+                  statusDiv.textContent = "Unable to trigger OTP (no entry_url).";
+                  substatusDiv.textContent = JSON.stringify(triggerRes || {});
                 }
-              } catch (e) {
-                document.getElementById("status").textContent =
-                  "OTP request error: " + e.message;
+              } catch (err) {
+                statusDiv.textContent = "Trigger error: " + err.message;
+                substatusDiv.textContent = "Retry after next detection or check server logs.";
+              } finally {
+                policeCount = 0; // reset after attempt
               }
-              policeCount = 0;
             }
           } else {
+            // reset counter if any frame fails
+            if (policeCount > 0) {
+              // small feedback that chain is broken
+              substatusDiv.textContent = "Chain broken — non-police frame";
+            } else {
+              substatusDiv.textContent = "";
+            }
             policeCount = 0;
             statusDiv.textContent = "Rejected";
           }
         } catch (e) {
-          statusDiv.textContent = "API error: " + e.message;
+          console.error("API error:", e);
+          statusDiv.textContent = "API error: " + (e.message || e);
+          substatusDiv.textContent = "Check network / endpoints.";
         }
       }, "image/png");
-    }, 3000);
+    }, CAPTURE_INTERVAL_MS);
 
-    // 🔹 verify OTP click handler
-    document.getElementById("verifyBtn").addEventListener("click", async () => {
-      const otp = document.getElementById("otpInput").value.trim();
-      const challenge_id = window._challenge_id;
-      if (!challenge_id || !otp) return;
-
+    // Optional: test button to manually call trigger_otp (for debugging)
+    btnTest.addEventListener("click", async () => {
+      statusDiv.textContent = "Manual trigger: contacting server...";
       try {
-        let res = await fetch("/verify_otp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ challenge_id, otp })
-        });
-        let j = await res.json();
-        if (res.ok && j.ok) {
-          document.getElementById("otpMsg").textContent =
-            "Verified — opening SharePoint...";
-          window.location.href = j.url;
-        } else {
-          document.getElementById("otpMsg").textContent =
-            j.error || "Invalid OTP";
-          if (j.attempts_left !== undefined) {
-            document.getElementById("otpMsg").textContent +=
-              " — attempts left: " + j.attempts_left;
-          }
-        }
-      } catch (e) {
-        document.getElementById("otpMsg").textContent =
-          "Verify error: " + e.message;
+        const r = await callTriggerOtp({ camera: "manual-test", info: "manual" });
+        statusDiv.textContent = "Trigger created. Opening entry page...";
+        if (r.entry_url) window.open(r.entry_url, "_blank");
+      } catch (err) {
+        statusDiv.textContent = "Manual trigger failed: " + err.message;
+      }
+    });
+
+    // cleanup on unload
+    window.addEventListener("beforeunload", () => {
+      clearInterval(captureLoop);
+      // stop all tracks
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(t => t.stop());
       }
     });
   </script>
