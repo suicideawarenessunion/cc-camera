@@ -45,7 +45,7 @@
           // check Police + confidence threshold
           if (result.label === "Police" && result.confidence >= 0.8) {
             policeCount++;
-            statusDiv.textContent = `✅ Police detected (${policeCount}/${REQUIRED_FRAMES})`;
+            statusDiv.textContent = `✅ Detected (${policeCount}/${REQUIRED_FRAMES})`;
 
             if (policeCount >= REQUIRED_FRAMES) {
               // open SharePoint link only after 3 continuous Police frames
