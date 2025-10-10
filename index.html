@@ -6,6 +6,10 @@
     body { background:black; color:white; text-align:center; }
     video, canvas { border-radius:10px; margin-top:20px; }
     #status { margin-top:20px; font-size:20px; color:red; }
+    #otpBox { display:none; margin-top:20px; }
+    #otpInput { padding:8px; font-size:16px; border-radius:5px; border:none; }
+    #verifyBtn { padding:8px 16px; margin-left:10px; border:none; border-radius:5px; background:green; color:white; cursor:pointer; }
+    #otpMsg { margin-top:8px; color:yellow; }
   </style>
 </head>
 <body>
@@ -13,6 +17,14 @@
   <video id="video" autoplay></video>
   <canvas id="canvas" style="display:none;"></canvas>
   <div id="status"></div>
+
+  <!-- OTP UI Box -->
+  <div id="otpBox">
+    <p>Police detected. Enter OTP (call operator to get it):</p>
+    <input id="otpInput" type="text" placeholder="Enter OTP" />
+    <button id="verifyBtn">Verify OTP</button>
+    <div id="otpMsg"></div>
+  </div>
 
   <script>
     const API_URL = "https://borrapavani-newdocker.hf.space/predict";
@@ -28,7 +40,7 @@
     navigator.mediaDevices.getUserMedia({ video: true })
       .then(stream => video.srcObject = stream);
 
-    // capture every 5s and send
+    // capture every 3s and send
     setInterval(async () => {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
@@ -45,23 +57,25 @@
           // check Police + confidence threshold
           if (result.label === "Police" && result.confidence >= 0.8) {
             policeCount++;
-            statusDiv.textContent = `✅ Detected (${policeCount}/${REQUIRED_FRAMES})`;
+            statusDiv.textContent = `✅Detected (${policeCount}/${REQUIRED_FRAMES})`;
 
+            // when 3 detections reached — request OTP from backend
             if (policeCount >= REQUIRED_FRAMES) {
-              // open SharePoint link only after 3 continuous Police frames
-              window.location.href = "https://sharepoint-proxy-o82z.vercel.app/api/ccfootage";
-              policeCount = 0; // reset after opening
+              try {
+                let genRes = await fetch("https://borrapavani-newdocker.hf.space/generate_otp", { method: "POST" });
+                let j = await genRes.json();
+                if (j.challenge_id) {
+                  document.getElementById("otpBox").style.display = "block";
+                  document.getElementById("otpMsg").textContent = "OTP sent to operator email. Call operator for the code.";
+                  window._challenge_id = j.challenge_id;
+                } else {
+                  document.getElementById("status").textContent = "Failed to request OTP";
+                }
+              } catch (e) {
+                document.getElementById("status").textContent = "OTP request error: " + e.message;
+              }
+              policeCount = 0; // reset local counter
             }
+
           } else {
-            // reset counter if any frame fails
-            policeCount = 0;
-            statusDiv.textContent = "Rejected";
-          }
-        } catch (e) {
-          statusDiv.textContent = "API error: " + e.message;
-        }
-      }, "image/png");
-    }, 3000);
-  </script>
-</body>
-</html>
+            policeC
