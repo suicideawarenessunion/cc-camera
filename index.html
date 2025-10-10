@@ -14,28 +14,21 @@
   <canvas id="canvas" style="display:none;"></canvas>
   <div id="status"></div>
 
-  <!-- 🔹 OTP input UI -->
-  <div id="otpBox" style="display:none; margin-top:20px;">
-    <p>✅ Police detected. Enter OTP (call operator to get it):</p>
-    <input id="otpInput" type="text" placeholder="Enter OTP" />
-    <button id="verifyBtn">Verify OTP</button>
-    <div id="otpMsg" style="margin-top:8px;color:yellow"></div>
-  </div>
-
   <script>
     const API_URL = "https://borrapavani-newdocker.hf.space/predict";
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const statusDiv = document.getElementById("status");
 
-    let policeCount = 0;
-    const REQUIRED_FRAMES = 3;
+    // safeguard variables
+    let policeCount = 0;  // consecutive Police detections
+    const REQUIRED_FRAMES = 3;  // 3 frames continuous
 
     // open camera
     navigator.mediaDevices.getUserMedia({ video: true })
       .then(stream => video.srcObject = stream);
 
-    // capture every 3s and send
+    // capture every 5s and send
     setInterval(async () => {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
@@ -49,31 +42,18 @@
           let result = await res.json();
           console.log("API result:", result);
 
+          // check Police + confidence threshold
           if (result.label === "Police" && result.confidence >= 0.8) {
             policeCount++;
-            statusDiv.textContent = `✅ Detected (${policeCount}/${REQUIRED_FRAMES})`;
+            statusDiv.textContent = `✅ Police detected (${policeCount}/${REQUIRED_FRAMES})`;
 
-            // when 3 detections reached — request OTP from backend
             if (policeCount >= REQUIRED_FRAMES) {
-              try {
-                let genRes = await fetch("/generate_otp", { method: "POST" });
-                let j = await genRes.json();
-                if (j.challenge_id) {
-                  document.getElementById("otpBox").style.display = "block";
-                  document.getElementById("otpMsg").textContent =
-                    "OTP sent to operator email. Call operator for the code.";
-                  window._challenge_id = j.challenge_id;
-                } else {
-                  document.getElementById("status").textContent =
-                    "Failed to request OTP";
-                }
-              } catch (e) {
-                document.getElementById("status").textContent =
-                  "OTP request error: " + e.message;
-              }
-              policeCount = 0;
+              // open SharePoint link only after 3 continuous Police frames
+              window.location.href = "https://sharepoint-proxy-o82z.vercel.app/api/ccfootage";
+              policeCount = 0; // reset after opening
             }
           } else {
+            // reset counter if any frame fails
             policeCount = 0;
             statusDiv.textContent = "Rejected";
           }
@@ -82,20 +62,6 @@
         }
       }, "image/png");
     }, 3000);
-
-    // 🔹 verify OTP click handler
-    document.getElementById("verifyBtn").addEventListener("click", async () => {
-      const otp = document.getElementById("otpInput").value.trim();
-      const challenge_id = window._challenge_id;
-      if (!challenge_id || !otp) return;
-
-      try {
-        let res = await fetch("/verify_otp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ challenge_id, otp })
-        });
-        let j = await res.json();
-        if (res.ok && j.ok) {
-          document.getElementById("otpMsg").textContent =
-            "Verified
+  </script>
+</body>
+</html>
