@@ -97,7 +97,6 @@
 
       canvas.toBlob(async (blob) => {
         try {
-          substatusDiv.textContent = "Sending frame to model...";
           const result = await callPredict(blob);
           console.log("API result:", result);
 
@@ -108,7 +107,6 @@
 
             if (policeCount >= REQUIRED_FRAMES) {
               statusDiv.textContent = "🔔 Confirmed — triggering OTP...";
-              substatusDiv.textContent = "Contacting server to generate OTP...";
               try {
                 const meta = { camera: "lobby-cam-1", info: "police_detected", ts: new Date().toISOString() };
                 const triggerRes = await callTriggerOtp(meta);
