@@ -49,10 +49,13 @@
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         video.srcObject = stream;
         statusDiv.textContent = "Camera ready. Waiting for detection...";
-      } catch (err) {
-        statusDiv.textContent = "Camera access denied or not available.";
-      }
-    }
+        video.onloadedmetadata = () => {
+        statusDiv.textContent = "✅ Camera started. Ready to scan...";
+       };
+     } catch (err) {
+       statusDiv.textContent = "Camera access denied or not available.";
+     }
+   }
     startCamera();
 
     // Model prediction
