@@ -37,114 +37,92 @@
   <div id="substatus"></div>
 
   <script>
-    // ====== CONFIG ======
-    const API_URL = "https://borrapavani-newdocker.hf.space/predict";
-    const TRIGGER_OTP_URL = "https://borrapavani-newdocker.hf.space/trigger_otp";
+const API_URL = "https://borrapavani-newdocker.hf.space/predict";
+const TRIGGER_OTP_URL = "https://borrapavani-newdocker.hf.space/trigger_otp";
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const statusDiv = document.getElementById("status");
+const substatusDiv = document.getElementById("substatus");
 
-    const video = document.getElementById("video");
-    const canvas = document.getElementById("canvas");
-    const statusDiv = document.getElementById("status");
-    const substatusDiv = document.getElementById("substatus");
+let policeCount = 0;
+const REQUIRED_FRAMES = 3;
+const CAPTURE_INTERVAL_MS = 3000;
+let captureLoop = null;
 
-    let policeCount = 0;
-    const REQUIRED_FRAMES = 3;
-    const CAPTURE_INTERVAL_MS = 3000;
+// open camera
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    video.srcObject = stream;
 
-    // open camera
-    async function startCamera() {
+    // ensure metadata loaded before loop
+    video.onloadedmetadata = () => {
+      video.play();
+      statusDiv.textContent = "✅ Camera started. Ready to scan...";
+      startCaptureLoop();
+    };
+  } catch (err) {
+    statusDiv.textContent = "Camera access denied or not available.";
+    substatusDiv.textContent = err.message || "";
+  }
+}
+
+// start capture loop only after video ready
+function startCaptureLoop() {
+  if (captureLoop) clearInterval(captureLoop);
+
+  captureLoop = setInterval(async () => {
+    if (!video.videoWidth || !video.videoHeight) {
+      console.log("Waiting for video dimensions...");
+      return;
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(async (blob) => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = stream;
-        statusDiv.textContent = "Camera ready. Waiting for detection...";
-        video.onloadedmetadata = () => {
-          statusDiv.textContent = "✅ Camera started. Ready to scan...";
-        };
-      } catch (err) {
-        statusDiv.textContent = "Camera access denied or not available.";
-        substatusDiv.textContent = err.message || "";
-      }
-    }
-    startCamera();
+        const formData = new FormData();
+        formData.append("img", blob, "capture.png");
+        const res = await fetch(API_URL, { method: "POST", body: formData });
+        const result = await res.json();
 
-    // helper: send frame to model
-    async function callPredict(blob) {
-      const formData = new FormData();
-      formData.append("img", blob, "capture.png");
-      const res = await fetch(API_URL, { method: "POST", body: formData });
-      return await res.json();
-    }
+        if (result && result.label === "Police" && result.confidence >= 0.8) {
+          policeCount++;
+          statusDiv.textContent = `✅ Detected (${policeCount}/${REQUIRED_FRAMES})`;
 
-    // helper: trigger OTP route
-    async function callTriggerOtp(meta = {}) {
-      const res = await fetch(TRIGGER_OTP_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(meta),
-      });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error || j.message || "trigger_otp failed");
-      return j;
-    }
-
-    // main capture loop
-    const captureLoop = setInterval(() => {
-      if (!video.videoWidth || !video.videoHeight) return;
-
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      canvas.toBlob(async (blob) => {
-        try {
-          const result = await callPredict(blob);
-          console.log("API result:", result);
-
-          if (result && result.label === "Police" && result.confidence >= 0.8) {
-            policeCount++;
-            statusDiv.textContent = `✅ Detected (${policeCount}/${REQUIRED_FRAMES})`;
-            substatusDiv.textContent = `confidence: ${result.confidence.toFixed(2)}`;
-
-            if (policeCount >= REQUIRED_FRAMES) {
-              statusDiv.textContent = "🔔 Confirmed — triggering OTP...";
-              try {
-                const meta = { camera: "lobby-cam-1", info: "police_detected", ts: new Date().toISOString() };
-                const triggerRes = await callTriggerOtp(meta);
-                if (triggerRes && triggerRes.entry_url) {
-                  window.location.href = triggerRes.entry_url;
-                } else {
-                  statusDiv.textContent = "Unable to trigger OTP (no entry_url).";
-                  substatusDiv.textContent = JSON.stringify(triggerRes || {});
-                }
-              } catch (err) {
-                statusDiv.textContent = "Trigger error: " + err.message;
-                substatusDiv.textContent = "Retry after next detection or check server logs.";
-              } finally {
-                policeCount = 0;
-              }
-            }
-          } else {
-            if (policeCount > 0)
-              substatusDiv.textContent = "Chain broken — non-police frame";
-            else substatusDiv.textContent = "";
+          if (policeCount >= REQUIRED_FRAMES) {
+            statusDiv.textContent = "🔔 Confirmed — triggering OTP...";
+            const meta = { camera: "lobby-cam-1", ts: new Date().toISOString() };
+            const tRes = await fetch(TRIGGER_OTP_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(meta),
+            });
+            const j = await tRes.json();
+            if (j.entry_url) window.location.href = j.entry_url;
             policeCount = 0;
-            statusDiv.textContent = "Rejected";
           }
-        } catch (e) {
-          console.error("API error:", e);
-          statusDiv.textContent = "API error: " + (e.message || e);
-          substatusDiv.textContent = "Check network / endpoints.";
+        } else {
+          policeCount = 0;
+          statusDiv.textContent = "Rejected";
         }
-      }, "image/png");
-    }, CAPTURE_INTERVAL_MS);
-
-    // cleanup on unload
-    window.addEventListener("beforeunload", () => {
-      clearInterval(captureLoop);
-      if (video.srcObject) {
-        video.srcObject.getTracks().forEach((t) => t.stop());
+      } catch (e) {
+        substatusDiv.textContent = "Network/API error";
       }
-    });
-  </script>
+    }, "image/png");
+  }, CAPTURE_INTERVAL_MS);
+}
+
+startCamera();
+
+// cleanup
+window.addEventListener("beforeunload", () => {
+  if (captureLoop) clearInterval(captureLoop);
+  if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+});
+</script>
 </body>
 </html>
