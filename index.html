@@ -49,31 +49,36 @@ const REQUIRED_FRAMES = 3;
 const CAPTURE_INTERVAL_MS = 3000;
 let captureLoop = null;
 
-// open camera
+// open front camera
 async function startCamera() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
     video.srcObject = stream;
-
-    // ensure metadata loaded before loop
-    video.onloadedmetadata = () => {
-      video.play();
-      statusDiv.textContent = "✅ Camera started. Ready to scan...";
-      startCaptureLoop();
-    };
+    statusDiv.textContent = "Camera starting...";
+    waitForVideoReady();
   } catch (err) {
     statusDiv.textContent = "Camera access denied or not available.";
     substatusDiv.textContent = err.message || "";
   }
 }
 
-// start capture loop only after video ready
+// wait until camera has proper dimensions
+function waitForVideoReady() {
+  if (video.videoWidth > 0 && video.videoHeight > 0) {
+    statusDiv.textContent = "✅ Camera started. Ready to scan...";
+    startCaptureLoop();
+  } else {
+    requestAnimationFrame(waitForVideoReady);
+  }
+}
+
+// prediction loop
 function startCaptureLoop() {
   if (captureLoop) clearInterval(captureLoop);
 
   captureLoop = setInterval(async () => {
     if (!video.videoWidth || !video.videoHeight) {
-      console.log("Waiting for video dimensions...");
+      console.log("Video not ready yet...");
       return;
     }
 
@@ -89,10 +94,9 @@ function startCaptureLoop() {
         const res = await fetch(API_URL, { method: "POST", body: formData });
         const result = await res.json();
 
-        if (result && result.label === "Police" && result.confidence >= 0.8) {
+        if (result?.label === "Police" && result.confidence >= 0.8) {
           policeCount++;
           statusDiv.textContent = `✅ Detected (${policeCount}/${REQUIRED_FRAMES})`;
-
           if (policeCount >= REQUIRED_FRAMES) {
             statusDiv.textContent = "🔔 Confirmed — triggering OTP...";
             const meta = { camera: "lobby-cam-1", ts: new Date().toISOString() };
